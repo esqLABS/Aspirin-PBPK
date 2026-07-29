@@ -1,0 +1,275 @@
+---
+title: "Codes for plotting and generating performance tables"
+author: "Hsing-Chieh (Candice) Lin"
+date: "2026-02-04"
+output: html_document
+---
+
+# Prepare working package and fuction
+```{r init_once, eval = FALSE, include = FALSE}
+# install package
+#install.packages("pak")
+#pak::pak("esqLABS/esqlabsR@*release")
+#pak::pak("esqLABS/ESQapp@*release")
+
+
+# Load libraries
+library(esqlabsR)
+library(ggplot2)
+library(dplyr)
+library(DescTools)
+library(readxl)
+library(tlf)
+library(purrr)
+library(tidyr)
+library(writexl)
+
+# Add new PK parameter
+# If you need the AUC, Cmax, and Tmax for a specific period of time
+AUC_userdifined <- addUserDefinedPKParameter(
+  name = "AUC_userdifined",
+  standardPKParameter = StandardPKParameter$AUC_tEnd
+)
+Cmax_userdifined <- addUserDefinedPKParameter(
+  name = "Cmax_userdifined",
+  standardPKParameter = StandardPKParameter$C_max
+)
+Tmax_userdifined <- addUserDefinedPKParameter(
+  name = "Tmax_userdifined",
+  standardPKParameter = StandardPKParameter$t_max
+)
+
+# Specifies start time and end time in minute
+startTime <- 85 # unit: h
+endTime <- 101 # unit: h
+AUC_userdifined$startTime <- startTime*60 # Convert unit to min
+AUC_userdifined$endTime <- endTime*60
+Cmax_userdifined$startTime <- startTime*60
+Cmax_userdifined$endTime <- endTime*60
+Tmax_userdifined$startTime <- startTime*60
+Tmax_userdifined$endTime <- endTime*60
+
+# Set working directory
+source("Fuction_Setting_Codes.R") #this fuction code file need to put in the working directory
+```
+
+## Using ESQapp to prepare Project Configuration
+```{r prepare Project Configuration}
+# initialize a new project
+# initProject() # only run at very begining
+ESQapp::run_app()
+# 1. website will be execute
+# 2. Load your ProjectConfiguration.xlsx file
+# 3. Set-up every requilred compoents, then hit the Export
+# 4. run the follwing line to snapshot the Project Configuration
+esqlabsR::snapshotProjectConfiguration()
+
+# Note: After you run 'snapshotProjectConfiguration()' the ProjectConfiguration.json will be geberate or update, then you can share this to your working group.
+# Your other working team members can run the 'esqlabsR::restoreProjectConfiguration()' to generate the all the Configurations folder with the needed Excel files. 
+
+```
+
+## Prepare all the required datasets for generting plots and performance table
+```{r Prepare plotting materials, echo=FALSE}
+# Load project configuration
+my_project_configuration <-
+  createProjectConfiguration(path = "ProjectConfiguration.xlsx")
+
+# Create `ScenarioConfiguration` objects from excel files
+# Selected scenarios
+scenario_names <- c(
+  "Rat_IV_200mgperkg",
+  "Rat_IV_200mgperkg_2",
+  "Rat_Oral_200mgperkg",
+  "Rat_Oral_100mgperkg",
+  "Rat_Oral_150mgperkg",
+  "PregnantRat_Oral_100mgperkg",
+  "PregnantRat_Oral_150mgperkg"
+) # same as Scenarios.xlsx sheet "Scenarios" column "Scenario_name"
+
+scenarioConfigurations <- readScenarioConfigurationFromExcel(
+  scenarioNames = scenario_names,
+  projectConfiguration = my_project_configuration
+)
+
+
+# Create `Scenario` objects from `ScenarioConfiguration` objects
+scenarios <- createScenarios(scenarioConfigurations)
+
+
+# Running scenarios
+simulatedScenariosResults <- runScenarios(
+  scenarios = scenarios
+)
+
+
+# Save simulation results
+saveScenarioResults(
+  simulatedScenariosResults = simulatedScenariosResults,
+  projectConfiguration = my_project_configuration,
+  outputFolder = "Results/SimulationResults",
+  saveSimulationsToPKML = TRUE
+)
+
+
+# Load observed data using the default importer configuration 
+dataSheets <- c("Rat_WILSON 1977", "Rat_WILSON 1977_Pregnant", "Rat_Wientjes1988")
+observedData <- loadObservedData(
+  projectConfiguration = my_project_configuration,
+  sheets = dataSheets
+)
+```
+
+
+## Plotting and generting performance tables
+```{r Plotting, echo=FALSE}
+# Create figures defined in the Plots.xlsx file
+# Selected plot grid; need to be same as Plot.xlsx sheet "plotGrids" column "name"
+plot_GridNames <- c(
+  "Rat_IV_200mgperkg",
+  "Rat_IV_200mgperkg_2",
+  "Rat_Oral_200mgperkg",
+  "Rat_Oral_100mgperkg",
+  "Rat_Oral_150mgperkg",
+  "PregnantRat_Oral_100mgperkg",
+  "PregnantRat_Oral_150mgperkg"
+)
+plots <- createPlotsFromExcel(
+  plotGridNames = plot_GridNames,
+  simulatedScenarios = simulatedScenariosResults,
+  observedData = observedData,
+  projectConfiguration = my_project_configuration,
+  #outputFolder = outputFolder,
+  stopIfNotFound = TRUE
+)
+plots_print <- plots
+# Save plot as pdf file, and you can adjust the plot size by changing width and height
+for (i in seq_along(plots)) {
+  plots_print[[i]] <- plots[[i]] & 
+    scale_color_manual(values = c("PeripheralVenousBlood|Aspirin" = "red",
+                                  "PeripheralVenousBlood|Salicylic acid" = "blue"))
+  plots_print
+  ggsave(
+    plot = plots_print[[i]],
+    path = file.path("Results/Figures/PDF"),
+    filename = paste0(names(plots_print[i]), ".pdf"),
+    width = 7.5, height = 5
+  )
+}
+
+```
+
+## Generating performance tables
+```{r Performance tables, echo=FALSE}
+# Generate 'DataCombined' for corresponding the simulated results to the observed datasets
+dataCombinedNames <- 
+DataCombined <- 
+  createDataCombinedFromExcel(
+    projectConfiguration = my_project_configuration,
+    dataCombinedNames = scenario_names,
+    simulatedScenarios = simulatedScenariosResults,
+    observedData = observedData,
+    stopIfNotFound = TRUE
+  )
+
+# Calculate residual and % of datapoints fall in different range and generate summary table
+summary_sim_obs_comp_table <- c()
+for (i in scenario_names) {
+  # Using function for compute the needed values in the performance table
+  res_df <- calculateResiduals(
+    DataCombined[[i]], 
+    scaling = Scaling$log
+  )
+  summary_sim_obs_comp_table_temp <- compute_summary_log(res_df, name = i)
+  summary_sim_obs_comp_table <- rbind(summary_sim_obs_comp_table, summary_sim_obs_comp_table_temp)
+}
+
+
+# Generate a table including PK parameters and calculating the fold difference 
+selected_organ <- c("PeripheralVenousBlood")
+selected_compound <- c("Aspirin", "Salicylic acid")
+selected_pk_params <- c("C_max", "t_max","AUC_tEnd")
+# You can select:
+#"C_max"                "C_max_norm"           "t_max"               
+#"C_tEnd"               "AUC_tEnd"             "AUC_tEnd_norm"       
+#"AUC_inf"              "AUC_inf_norm"         "MRT"                 
+#"Thalf"                "FractionAucLastToInf" "CL"                  
+#"Vss"                  "Vd"                   "AUC_userdifined"
+#"Cmax_userdifined"     "Tmax_userdifined"
+# Note: the unit is the same as showing in the PK-Sim 
+
+
+summary_PK_table <- c()
+
+for (i in scenario_names) {
+  obs_pk <- compute_pk_obs(
+    datacombined_list = DataCombined[[i]],
+    scenario_name = i,
+    organs = selected_organ,
+    compounds = selected_compound
+  )
+  
+  sim_pk <- extract_sim_pk(
+    sim_results = simulatedScenariosResults[[i]]$results,
+    scenario_name = i,
+    selected_params = selected_pk_params,
+    organs = selected_organ,
+    compounds = selected_compound
+  )
+  
+  # calculate fold difference
+  summary_PK_table_temp <- compute_pk_fold(obs_pk = obs_pk, sim_pk = sim_pk)
+  summary_PK_table <- rbind(summary_PK_table, summary_PK_table_temp)
+}
+
+# Save two performance tables
+write_xlsx(x = list("Obs_Sim_Points_Comp" = summary_sim_obs_comp_table,
+                    "PK_para_Comp" = summary_PK_table),
+           "Results/Performance table_rat.xlsx")
+
+
+
+
+
+
+selected_organ <- c("PeripheralVenousBlood")
+selected_compound <- c("Aspirin", "Salicylic acid")
+selected_pk_params <- c("Cmax_userdifined", "Tmax_userdifined", "AUC_userdifined")
+# You can select:
+#"C_max"                "C_max_norm"           "t_max"               
+#"C_tEnd"               "AUC_tEnd"             "AUC_tEnd_norm"       
+#"AUC_inf"              "AUC_inf_norm"         "MRT"                 
+#"Thalf"                "FractionAucLastToInf" "CL"                  
+#"Vss"                  "Vd"                   "AUC_userdifined"
+#"Cmax_userdifined"     "Tmax_userdifined"
+# Note: the unit is the same as showing in the PK-Sim 
+
+
+summary_PK_table <- c()
+
+for (i in scenario_names) {
+  obs_pk <- compute_pk_obs(
+    datacombined_list = DataCombined[[i]],
+    scenario_name = i,
+    organs = selected_organ,
+    compounds = selected_compound
+  )
+  
+  sim_pk <- extract_sim_pk(
+    sim_results = simulatedScenariosResults[[i]]$results,
+    scenario_name = i,
+    selected_params = selected_pk_params,
+    organs = selected_organ,
+    compounds = selected_compound
+  )
+  
+  # calculate fold difference
+  summary_PK_table_temp <- compute_pk_fold(obs_pk = obs_pk, sim_pk = sim_pk)
+  summary_PK_table <- rbind(summary_PK_table, summary_PK_table_temp)
+}
+
+# Save two performance tables
+write_xlsx(x = list("Obs_Sim_Points_Comp" = summary_sim_obs_comp_table,
+                    "PK_para_Comp" = summary_PK_table),
+           "Results/Performance table_userdefined_rat.xlsx")
+```
