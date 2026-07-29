@@ -1,0 +1,71 @@
+name: Sync main-qsp from main
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main-qsp
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Fetch and attempt merge from main
+        id: merge
+        run: |
+          git fetch origin main
+          if git merge origin/main --no-edit; then
+            echo "status=clean" >> $GITHUB_OUTPUT
+          else
+            git diff --name-only --diff-filter=U > /tmp/conflicts.txt
+            git merge --abort
+            echo "status=conflict" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Push clean merge
+        if: steps.merge.outputs.status == 'clean'
+        run: git push origin main-qsp
+
+      - name: Open conflict PR
+        if: steps.merge.outputs.status == 'conflict'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const conflicts = fs.readFileSync('/tmp/conflicts.txt', 'utf8').trim();
+            await github.rest.pulls.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: '⚠️ main-qsp: manual merge from main required',
+              head: 'main',
+              base: 'main-qsp',
+              body: [
+                '## Manual merge required',
+                '',
+                'The following files conflict with QSP modifications:',
+                '```',
+                conflicts,
+                '```',
+                '',
+                '**Review checklist:**',
+                '- [ ] Are conflicting files QSP-modified or from upstream?',
+                '- [ ] Do upstream changes need to be reflected in QSP additions?',
+                '- [ ] Is QSP behaviour preserved after merge?',
+              ].join('\n')
+            });

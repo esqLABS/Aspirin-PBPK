@@ -1,0 +1,10 @@
+.Rproj.user
+.Rhistory
+.RData
+.Ruserdata
+README.html
+.Renviron
+
+# Configurations Excel files created by esqlabsR::initProject() — share via JSON snapshot, not Git.
+ProjectConfiguration.xlsx
+Configurations/*.xlsx

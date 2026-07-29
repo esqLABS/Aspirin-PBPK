@@ -1,0 +1,12 @@
+Type: Project
+Title: ESQlabs Project
+Description: Starter dependencies for a project created from the
+    ESQlabs project template. Used by renv to install packages on
+    project initialization. Use regular install() function from renv to install other packages.
+    DO NOT EDIT THIS LIST.
+Imports:
+    esqlabsR,
+    quarto,
+    rmarkdown
+Remotes:
+    esqlabs/esqlabsR@*release
