@@ -1,9 +1,21 @@
 ---
 title: "Codes for plotting and generating performance tables"
 author: "Hsing-Chieh (Candice) Lin"
-date: "2026-02-04"
+date: "2026-08-04"
 output: html_document
 ---
+
+#Disclaimer
+This work product was developed and is made publicly available by ESQlabs GmbH under Grant INV-089180, 
+with funding from the Gates Foundation.
+
+ESQlabs is solely responsible for the scientific content of this work, including its methodology, assumptions, implementation, documentation, analyses, and conclusions. The work represents the state of development achieved
+under the grant and is provided as-is for research and informational purposes.
+
+The models and associated outputs have not been independently verified, validated, or qualified by the Gates Foundation for clinical, regulatory, product-development, or patient-care decision-making. Publication of this work, and acknowledgment of Foundation funding, should not be interpreted as endorsement by the Gates Foundation of the scientific methods, model performance, conclusions, or fitness of the work for any particular purpose.
+
+Users are responsible for independently evaluating the work, its assumptions, limitations, applicability, and fitness for their intended use. ESQlabs should be contacted regarding any questions, corrections, maintenance, or further development of the work.
+
 
 # Prepare working package and fuction
 ```{r init_once, eval = FALSE, include = FALSE}
