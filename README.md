@@ -43,6 +43,9 @@ For full file descriptions, the complete build order, the parameter identificati
 3. Use `Fu_scale_code.R` to recalculate gestational-age-specific fraction-unbound values if modifying the pregnant models.
 4. Use the `Plot code/` workflow to regenerate all figures and fold-difference/performance tables reported in the manuscript.
 
+## Dissemination of the project
+
+1st International PBPK Conference 2026
 
 ## Need More Help?
 
