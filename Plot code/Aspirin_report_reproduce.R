@@ -81,7 +81,7 @@ rat_scenarios <- c(
 
 # Fixed time windows (h) for repeated dosing; all other scenarios use the full profile
 pk_windows <- list(
-  "ASA_Oral_50mg_release_1wk"                         = c(144, 155),
+  "ASA_Oral_50mg_release_1wk"                         = c(144.5, 151),
   "Pregnant individual_12wk_Oral_repeat81mg_diss"     = c(2832, 2838),
   "POP_Pregnant individual_12wk_Oral_repeat81mg_diss" = c(2832, 2838),
   "Rat_Oral_100mgperkg"                               = c(85, 101),
@@ -90,6 +90,13 @@ pk_windows <- list(
   "PregnantRat_Oral_150mgperkg"                       = c(85, 101)
 )
 
+# AUC interval for single-dose scenarios --------------------------------
+# FALSE: simulated AUC_tEnd = time zero to end of simulation (report v5/v6 method)
+# TRUE : simulated AUC over the observed sampling interval (first to last observation,
+#        never beyond the end of the simulation), as in the manuscript; Cmax and Tmax stay
+#        full-profile
+auc_to_last_obs <- TRUE
+
 # Figure settings (report format) -------------------------------------
 fig_colors <- c("PeripheralVenousBlood|Aspirin" = "red",
                 "PeripheralVenousBlood|Salicylic acid" = "blue")
@@ -97,6 +104,7 @@ fig_width  <- 7.5   # inch
 fig_height <- 5
 also_jpeg  <- TRUE  # convert each PDF to JPEG (keeps the PDF layout and font size)
 jpeg_dpi   <- 300
+
 
 # =====================================================================
 # 1. Packages and functions
@@ -109,6 +117,7 @@ library(tidyr)
 library(DescTools)
 library(tlf)
 library(writexl)
+if (also_jpeg && !requireNamespace("pdftools", quietly = TRUE)) install.packages("pdftools")
 
 source(function_file)
 for (d in c("Figures/Human", "Figures/Rat", "Tables")) {
@@ -171,16 +180,37 @@ pk_table_scenario <- function(run, scenario) {
   }
   obs_pk <- compute_obs_pk_fixed(run$dc[[scenario]], scenario)
   if (nrow(obs_pk) == 0) return(NULL)
-  sim_pk <- extract_sim_pk(run$sim[[scenario]]$results, scenario_name = scenario,
-                           selected_params = params, organs = "PeripheralVenousBlood",
-                           compounds = c("Aspirin", "Salicylic acid"))
-  compute_pk_fold(obs_pk, sim_pk) %>%
-    filter(Fold_Status == "Fold calculated") %>%
+  get_sim <- function(prm, cps = c("Aspirin", "Salicylic acid"))
+    extract_sim_pk(run$sim[[scenario]]$results, scenario_name = scenario,
+                   selected_params = prm, organs = "PeripheralVenousBlood", compounds = cps)
+  res <- compute_pk_fold(obs_pk, get_sim(params)) %>% filter(Fold_Status == "Fold calculated")
+  
+  # single dose: replace AUC by AUC from time zero to the last observation (per compound)
+  if (is.null(window) && auc_to_last_obs) {
+    od <- ospsuite::convertUnits(run$dc[[scenario]], xUnit = "h")
+    for (cp in unique(res$Compound)) {
+      d <- od %>% filter(grepl(cp, group, fixed = TRUE), !is.na(yValues))
+      sim_end <- max(d$xValues[d$dataType == "simulated"])
+      t_obs   <- d$xValues[d$dataType == "observed" & d$xValues <= sim_end]
+      t_first <- min(t_obs); t_last <- max(t_obs)
+      set_pk_window(c(t_first, t_last))   # observed sampling interval
+      fa <- compute_pk_fold(obs_pk %>% filter(Compound == cp), get_sim("AUC_userdifined", cp)) %>%
+        filter(Fold_Status == "Fold calculated")
+      if (nrow(fa) == 1) {
+        i <- which(res$Compound == cp & res$Obs_PK == "AUC_tEnd")
+        res$Sim_Value[i] <- fa$Sim_Value; res$Fold[i] <- fa$Fold
+        res$Sim_PK[i] <- sprintf("AUC %.2f–%.2f h", t_first, t_last)
+      }
+    }
+  }
+  
+  res %>%
     mutate(
       `PK para.` = Obs_PK,
       # Tmax after IV bolus: first observation at ~time zero -> fold not meaningful ("-" in report)
       Fold = ifelse(Obs_PK == "t_max" & Obs_Value < 1 / 60, NA_real_, Fold),
-      PK_method = if (is.null(window)) "Full profile" else sprintf("Window %g–%g h", window[1], window[2]),
+      PK_method = if (!is.null(window)) sprintf("Window %g–%g h", window[1], window[2])
+      else ifelse(grepl("^AUC [0-9]", Sim_PK), paste("Full profile;", Sim_PK), "Full profile"),
       Simulation = ifelse(grepl("^POP_", Scenario), "Population (median, n = 100)", "Individual")
     ) %>%
     select(Scenario, Compound, `PK para.`, Sim_Value, Obs_Value, Fold, PK_method, Simulation)
@@ -245,6 +275,7 @@ tables <- lapply(tables, function(t) t %>% mutate(across(where(is.numeric), ~ ro
 write_xlsx(tables, file.path(out_dir, "Tables", "Report_performance_tables.xlsx"))
 
 writeLines(c(paste("Run date:", format(Sys.time(), "%Y-%m-%d %H:%M %Z")),
+             paste("auc_to_last_obs:", auc_to_last_obs),
              "PK windows (h):",
              paste0("  ", names(pk_windows), ": ", sapply(pk_windows, paste, collapse = "–")),
              "", capture.output(sessionInfo())),

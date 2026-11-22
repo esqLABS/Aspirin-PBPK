@@ -57,10 +57,12 @@ fig_style <- list(
 )
 
 # AUC interval --------------------------------------------------------
-# FALSE: simulated AUC_tEnd = time zero to end of simulation (method used for v1.2 tables)
-# TRUE : simulated AUC/Cmax/Tmax from time zero to the last observation of each dataset,
-#        so that simulated and observed AUC cover the same interval
-auc_to_last_obs <- FALSE
+# FALSE: simulated AUC_tEnd = time zero to end of simulation
+# TRUE : simulated AUC over the observed sampling interval (first to last observation) of
+#        each dataset (single-dose scenarios), so that simulated and observed AUC cover the
+#        same interval;
+#        Cmax and Tmax are always taken from the full simulated profile
+auc_to_last_obs <- TRUE
 
 
 # =====================================================================
@@ -133,26 +135,34 @@ compute_obs_pk_fixed <- function(dc, scenario, compound) {
 pk_row <- function(run, scenario, analyte, window = NULL) {
   compound <- c(ASA = "Aspirin", SA = "Salicylic acid")[[analyte]]
   obs_pk <- compute_obs_pk_fixed(run$dc[[scenario]], scenario, compound)
-  if (is.null(window) && auc_to_last_obs) {
-    od <- ospsuite::convertUnits(run$dc[[scenario]], xUnit = "h") %>%
-      filter(dataType == "observed", grepl(compound, group, fixed = TRUE), !is.na(yValues))
-    window <- c(0, max(od$xValues))
-  }
-  if (is.null(window)) {
-    params <- c("C_max", "t_max", "AUC_tEnd")
-  } else {
-    set_pk_window(window)
-    params <- c("Cmax_userdifined", "Tmax_userdifined", "AUC_userdifined")
-  }
-  sim_pk <- extract_sim_pk(run$sim[[scenario]]$results, scenario_name = scenario,
-                           selected_params = params,
-                           organs = "PeripheralVenousBlood", compounds = compound)
-  f <- compute_pk_fold(obs_pk, sim_pk) %>% filter(Fold_Status == "Fold calculated")
-  pick <- function(o) {
-    r <- f[f$Obs_PK == o, ]
+  get_sim <- function(params) extract_sim_pk(run$sim[[scenario]]$results, scenario_name = scenario,
+                                             selected_params = params,
+                                             organs = "PeripheralVenousBlood", compounds = compound)
+  pick <- function(f, o) {
+    r <- f[f$Obs_PK == o & f$Fold_Status == "Fold calculated", ]
     if (nrow(r) == 0) c(NA_real_, NA_real_) else c(r$Sim_Value[1], r$Obs_Value[1])
   }
-  cm <- pick("C_max"); tm <- pick("t_max"); au <- pick("AUC_tEnd")
+  if (!is.null(window)) {
+    # repeated dosing: Cmax, Tmax and AUC over the given window
+    set_pk_window(window)
+    f <- compute_pk_fold(obs_pk, get_sim(c("Cmax_userdifined", "Tmax_userdifined", "AUC_userdifined")))
+    cm <- pick(f, "C_max"); tm <- pick(f, "t_max"); au <- pick(f, "AUC_tEnd")
+  } else {
+    # single dose: Cmax and Tmax from the full profile
+    f <- compute_pk_fold(obs_pk, get_sim(c("C_max", "t_max", "AUC_tEnd")))
+    cm <- pick(f, "C_max"); tm <- pick(f, "t_max"); au <- pick(f, "AUC_tEnd")
+    if (auc_to_last_obs) {
+      # AUC over the observed sampling interval (first to last observation used,
+      # never beyond the end of the simulation)
+      od <- ospsuite::convertUnits(run$dc[[scenario]], xUnit = "h") %>%
+        filter(grepl(compound, group, fixed = TRUE), !is.na(yValues))
+      sim_end <- max(od$xValues[od$dataType == "simulated"])
+      t_obs   <- od$xValues[od$dataType == "observed" & od$xValues <= sim_end]
+      set_pk_window(c(min(t_obs), max(t_obs)))   # observed sampling interval
+      fa <- compute_pk_fold(obs_pk, get_sim("AUC_userdifined"))
+      au <- pick(fa, "AUC_tEnd")
+    }
+  }
   tibble(Sim_Cmax = cm[1], Obs_Cmax = cm[2], Sim_Tmax = tm[1], Obs_Tmax = tm[2],
          Sim_AUC = au[1], Obs_AUC = au[2],
          Cmax = cm[1] / cm[2], Tmax = tm[1] / tm[2], AUC = au[1] / au[2])
@@ -201,8 +211,8 @@ tab_S2_def <- tibble::tribble(
   "Calibration", paste0(B88, ", 50 mg oral MR"),           "ASA_Oral_50mg_release",      "ASA",    NA, NA, FALSE,
   "Calibration", paste0(B88, ", 50 mg oral MR"),           "ASA_Oral_50mg_release",      "SA",     NA, NA, FALSE,
   "Calibration", paste0(S19, ", 100 mg oral EC"),          "ASA_Oral_100mg_ECform",      "SA",     NA, NA, FALSE,
-  "Evaluation",  paste0(B88, ", 50 mg MR daily, 1 week"),  "ASA_Oral_50mg_release_1wk",  "ASA",   144, 155, FALSE,
-  "Evaluation",  paste0(B88, ", 50 mg MR daily, 1 week"),  "ASA_Oral_50mg_release_1wk",  "SA",    144, 155, FALSE,
+  "Evaluation",  paste0(B88, ", 50 mg MR daily, 1 week"),  "ASA_Oral_50mg_release_1wk",  "ASA", 144.5, 151, FALSE,
+  "Evaluation",  paste0(B88, ", 50 mg MR daily, 1 week"),  "ASA_Oral_50mg_release_1wk",  "SA",  144.5, 151, FALSE,
   "Evaluation",  paste0(R94, ", 75 mg oral"),              "ASA_Oral_75mg_diss",         "ASA",    NA, NA, FALSE,
   "Evaluation",  paste0(R94, ", 75 mg oral"),              "ASA_Oral_75mg_diss",         "SA",     NA, NA, FALSE,
   "Evaluation",  paste0(S19, ", 100 mg oral"),             "ASA_Oral_100mg_diss",        "SA",     NA, NA, FALSE,
