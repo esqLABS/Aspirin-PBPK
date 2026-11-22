@@ -27,7 +27,7 @@ Users are responsible for independently evaluating the work, its assumptions, li
 | `Code/Fu_scale_code.R` | Calculates gestational-age-specific fraction-unbound values for the pregnant models. |
 | `Plot code/` | R workflow used to run scenarios and generate all figures and performance tables. |
 
-For full descriptions, file-by-file usage notes, and the complete reproducibility guide, see **`Reports/WP7_WP8_Report_v5.pdf`**.
+For full descriptions, file-by-file usage notes, and the complete reproducibility guide, see **`Reports/WP7_WP8_Report_v6.pdf`**.
 
 ## Requirements
 
@@ -36,7 +36,7 @@ For full descriptions, file-by-file usage notes, and the complete reproducibilit
 
 ## How to reproduce reported results
 
-For full file descriptions, the complete build order, the parameter identification method, and known factors affecting exact reproduction (e.g., IVIVE-constrained fitting ranges, fixed-time-window PK-parameter calculations), see **`Reports/WP7_WP8_Report_v5.pdf`**.
+For full file descriptions, the complete build order, the parameter identification method, and known factors affecting exact reproduction (e.g., IVIVE-constrained fitting ranges, fixed-time-window PK-parameter calculations), see **`Reports/WP7_WP8_Report_v6.pdf`**.
 
 1. Open the non-pregnant `.pksim5` files directly in PK-Sim to inspect or re-run the non-pregnant models.
 2. Open the pregnant `.mbp3` files directly in MoBi to inspect or re-run the pregnant models.
